@@ -109,7 +109,7 @@
                         </template>
 
                         <template #item.image="{item}">
-                            <v-avatar :image="item.image" size="x-large" class="mt-1 mb-1" v-if="item.image"></v-avatar>
+                            <v-avatar :image="getRecipeImage(item)" size="x-large" class="mt-1 mb-1" v-if="getRecipeImage(item)"></v-avatar>
                             <v-avatar color="primary" variant="tonal" size="x-large" class="mt-1 mb-1" v-else>
                                 <random-icon></random-icon>
                             </v-avatar>
@@ -191,6 +191,7 @@ import RatingField from "@/components/inputs/RatingField.vue";
 import BatchDeleteDialog from "@/components/dialogs/BatchDeleteDialog.vue";
 import {EditorSupportedTypes} from "@/types/Models.ts";
 import BatchEditRecipeDialog from "@/components/dialogs/BatchEditRecipeDialog.vue";
+import {getRecipeImageUrl as getRecipeImage} from "@/composables/useRecipeImage";
 
 const {t} = useI18n()
 const router = useRouter()

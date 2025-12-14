@@ -29,7 +29,7 @@
                                 <v-divider v-if="mealPlanGridItem.plan_entries.length > 0"></v-divider>
                                 <v-list-item v-for="p in mealPlanGridItem.plan_entries" :key="p.id" @click="clickMealPlan(p)" link>
                                     <template #prepend>
-                                        <v-avatar :image="p.recipe.image" v-if="p.recipe?.image"></v-avatar>
+                                        <v-avatar :image="getRecipeImage(p.recipe)" v-if="getRecipeImage(p.recipe)"></v-avatar>
                                         <v-avatar image="../../assets/recipe_no_image.svg" v-else></v-avatar>
                                     </template>
                                     <v-list-item-title>
@@ -79,6 +79,7 @@ import {DateTime} from "luxon";
 import {homePageCols} from "@/utils/breakpoint_utils";
 import ModelEditDialog from "@/components/dialogs/ModelEditDialog.vue";
 import {useRouter} from "vue-router";
+import {getRecipeImageUrl as getRecipeImage} from "@/composables/useRecipeImage";
 
 const router = useRouter()
 const {name} = useDisplay()

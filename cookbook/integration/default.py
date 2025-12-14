@@ -57,7 +57,15 @@ class Default(Integration):
                 recipe_stream.close()
 
                 try:
-                    recipe_zip_obj.writestr(f'image{get_filetype(r.image.file.name)}', r.image.file.read())
+                    # Get primary image from RecipeImage model, fallback to legacy image field
+                    primary_image = r.images.filter(is_primary=True).first()
+                    if not primary_image:
+                        primary_image = r.images.first()
+
+                    if primary_image and primary_image.image:
+                        recipe_zip_obj.writestr(f'image{get_filetype(primary_image.image.file.name)}', primary_image.image.file.read())
+                    elif r.image:
+                        recipe_zip_obj.writestr(f'image{get_filetype(r.image.file.name)}', r.image.file.read())
                 except (ValueError, FileNotFoundError):
                     pass
 

@@ -27,6 +27,8 @@
                         <v-text-field :label="$t('Name')" v-model="editingObj.name"></v-text-field>
                         <v-textarea :label="$t('Description')" v-model="editingObj.description" clearable counter="512" maxlength="512" rows="2" auto-grow></v-textarea>
 
+                        <!-- Multiple Images Section -->
+                        <v-label class="mb-2">{{ $t('Images') }}</v-label>
                         <v-row>
                             <v-col cols="12" md="6">
                                 <v-file-upload v-model="file"
@@ -37,13 +39,41 @@
                                 >
                                 </v-file-upload>
                             </v-col>
-                            <v-col cols="12" md="6" v-if="editingObj.image">
+                            <!-- Legacy single image display (for backward compatibility) -->
+                            <v-col cols="12" md="6" v-if="editingObj.image && (!recipeImages || recipeImages.length === 0)">
                                 <v-img style="max-height: 180px" cover class="mb-2" :src="editingObj.image">
                                     <v-btn color="delete" class="float-right mt-2 mr-2" prepend-icon="$delete" v-if="editingObj.image" @click="deleteImage()">{{
                                             $t('Delete')
                                         }}
                                     </v-btn>
                                 </v-img>
+                            </v-col>
+                        </v-row>
+
+                        <!-- Image Gallery for multiple images -->
+                        <v-row v-if="recipeImages && recipeImages.length > 0" class="mt-2">
+                            <v-col cols="12">
+                                <v-label class="mb-2">{{ $t('Image_Gallery') }} ({{ recipeImages.length }})</v-label>
+                            </v-col>
+                            <v-col cols="6" md="3" v-for="(img, idx) in recipeImages" :key="img.id">
+                                <v-card class="image-gallery-card" :class="{'primary-image': img.isPrimary}">
+                                    <v-img :src="img.image || ''" height="120" cover :class="{'loading-image': isImageLoading(img.id!)}">
+                                        <v-chip v-if="img.isPrimary" color="primary" size="small" class="ma-1">
+                                            {{ $t('Primary') }}
+                                        </v-chip>
+                                        <v-progress-circular v-if="isImageLoading(img.id!)" indeterminate size="24" class="image-loading-spinner"></v-progress-circular>
+                                    </v-img>
+                                    <v-card-actions class="pa-1">
+                                        <v-btn icon size="x-small" @click="setImageAsPrimary(img.id!)" :disabled="img.isPrimary || isImageLoading(img.id!)" :title="$t('Set_Primary')">
+                                            <v-icon>fa-solid fa-star</v-icon>
+                                        </v-btn>
+                                        <v-spacer></v-spacer>
+                                        <v-btn icon size="x-small" color="error" :disabled="isImageLoading(img.id!)" :title="$t('Delete')">
+                                            <v-icon>$delete</v-icon>
+                                            <delete-confirm-dialog :object-name="$t('Image')" :model-name="$t('Image')" @delete="deleteGalleryImage(img.id!)"></delete-confirm-dialog>
+                                        </v-btn>
+                                    </v-card-actions>
+                                </v-card>
                             </v-col>
                         </v-row>
 
@@ -174,6 +204,7 @@
 
 import {onMounted, PropType, ref, shallowRef, watch} from "vue";
 import {ApiApi, Ingredient, Recipe, Step} from "@/openapi";
+import type {RecipeImageItem} from "@/types/RecipeImage";
 import ModelEditorBase from "@/components/model_editors/ModelEditorBase.vue";
 import {useModelEditorFunctions} from "@/composables/useModelEditorFunctions";
 import ModelSelect from "@/components/inputs/ModelSelect.vue";
@@ -216,8 +247,34 @@ const {mobile} = useDisplay()
 const tab = ref("recipe")
 const dialogStepManager = ref(false)
 
-const {fileApiLoading, updateRecipeImage} = useFileApi()
+const {fileApiLoading, updateRecipeImage, addRecipeImage, deleteRecipeGalleryImage, setRecipeImagePrimary, getRecipeImages} = useFileApi()
 const file = shallowRef<File | null>(null)
+const recipeImages = ref<RecipeImageItem[]>([])
+// Track multiple concurrent image operations using Set to handle rapid user interactions
+const imageOperationsInProgress = ref<Set<number>>(new Set())
+
+/**
+ * Check if an image operation is in progress for a given image ID
+ */
+function isImageLoading(imageId: number): boolean {
+    return imageOperationsInProgress.value.has(imageId)
+}
+
+/**
+ * Mark an image operation as starting
+ */
+function startImageOperation(imageId: number): void {
+    imageOperationsInProgress.value = new Set([...imageOperationsInProgress.value, imageId])
+}
+
+/**
+ * Mark an image operation as complete
+ */
+function endImageOperation(imageId: number): void {
+    const newSet = new Set(imageOperationsInProgress.value)
+    newSet.delete(imageId)
+    imageOperationsInProgress.value = newSet
+}
 
 const aiStepSortLoading = ref(false)
 
@@ -241,29 +298,105 @@ function initializeEditor() {
             editingObj.value.internal = true //TODO make database default after v2
         },
         itemDefaults: props.itemDefaults,
+    }).then(() => {
+        // Load images after recipe data is loaded (editingObj.value.id is now available)
+        loadRecipeImages()
     })
+}
+
+/**
+ * Load all images for the current recipe
+ */
+function loadRecipeImages() {
+    if (editingObj.value.id) {
+        getRecipeImages(editingObj.value.id).then(images => {
+            recipeImages.value = images
+        }).catch(err => {
+            useMessageStore().addError(ErrorMessageType.FETCH_ERROR, err)
+        })
+    } else {
+        recipeImages.value = []
+    }
+}
+
+/**
+ * Migrate legacy Recipe.image to RecipeImage gallery
+ * This handles recipes imported before the multiple image feature was added
+ */
+async function migrateLegacyImage(): Promise<void> {
+    if (editingObj.value.id && editingObj.value.image && recipeImages.value.length === 0) {
+        // Migrate legacy image to gallery as primary
+        await addRecipeImage(editingObj.value.id, null, editingObj.value.image, true, 0)
+        // Clear legacy image field
+        await updateRecipeImage(editingObj.value.id, null)
+    }
 }
 
 /**
  * save recipe via normal saveMethod and update image afterward if it was changed
  */
 function saveRecipe() {
-    saveObject().then(() => {
+    saveObject().then(async () => {
         if (file.value != null && editingObj.value.id) {
-            updateRecipeImage(editingObj.value.id, file.value).then(r => {
+            // If there's a legacy image and no gallery images, migrate it first
+            await migrateLegacyImage()
+
+            // Add new image to gallery (set as primary only if no images exist after migration)
+            const isPrimary = recipeImages.value.length === 0 && !editingObj.value.image
+            const sortOrder = recipeImages.value.length > 0 ? recipeImages.value.length : (editingObj.value.image ? 1 : 0)
+
+            addRecipeImage(editingObj.value.id, file.value, undefined, isPrimary, sortOrder).then(r => {
                 file.value = null
-                setupState(props.item, props.itemId)
+                setupState(props.item, props.itemId).then(() => {
+                    loadRecipeImages()
+                })
+            }).catch(err => {
+                useMessageStore().addError(ErrorMessageType.CREATE_ERROR, err)
             })
         }
+    }).catch(err => {
+        useMessageStore().addError(ErrorMessageType.UPDATE_ERROR, err)
     })
 }
 
 /**
- * remove image if delete was manually triggered
+ * remove legacy image if delete was manually triggered
  */
 function deleteImage() {
     updateRecipeImage(editingObj.value.id!, null).then(r => {
         setupState(props.item, props.itemId)
+    }).catch(err => {
+        useMessageStore().addError(ErrorMessageType.DELETE_ERROR, err)
+    })
+}
+
+/**
+ * Delete an image from the gallery
+ * @param imageId ID of the image to delete
+ */
+function deleteGalleryImage(imageId: number) {
+    startImageOperation(imageId)
+    deleteRecipeGalleryImage(imageId).then(() => {
+        loadRecipeImages()
+    }).catch(err => {
+        useMessageStore().addError(ErrorMessageType.DELETE_ERROR, err)
+    }).finally(() => {
+        endImageOperation(imageId)
+    })
+}
+
+/**
+ * Set an image as the primary image
+ * @param imageId ID of the image to set as primary
+ */
+function setImageAsPrimary(imageId: number) {
+    startImageOperation(imageId)
+    setRecipeImagePrimary(imageId).then(() => {
+        loadRecipeImages()
+    }).catch(err => {
+        useMessageStore().addError(ErrorMessageType.UPDATE_ERROR, err)
+    }).finally(() => {
+        endImageOperation(imageId)
     })
 }
 
@@ -349,5 +482,27 @@ function aiStepSort(providerId: number) {
 </script>
 
 <style scoped>
+.image-gallery-card {
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease;
+}
 
+.image-gallery-card.primary-image {
+    border-color: rgb(var(--v-theme-primary));
+}
+
+.image-gallery-card:hover {
+    border-color: rgba(var(--v-theme-primary), 0.5);
+}
+
+.loading-image {
+    opacity: 0.5;
+}
+
+.image-loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
 </style>

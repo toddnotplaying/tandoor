@@ -1,13 +1,14 @@
 import json
+import logging
 from io import BytesIO
 
-import requests
-
-from cookbook.helper.HelperFunctions import validate_import_url
+from cookbook.helper.HelperFunctions import secure_image_fetch
 from cookbook.helper.ingredient_parser import IngredientParser
 from cookbook.helper.recipe_url_import import parse_servings, parse_servings_text, parse_time
 from cookbook.integration.integration import Integration
 from cookbook.models import Ingredient, Recipe, Step
+
+logger = logging.getLogger(__name__)
 
 
 class RecipeSage(Integration):
@@ -56,11 +57,14 @@ class RecipeSage(Integration):
         if len(file['image']) > 0:
             try:
                 url = file['image'][0]
-                if validate_import_url(url):
-                    response = requests.get(url)
-                    self.import_recipe_image(recipe, BytesIO(response.content))
-            except Exception as e:
-                print('failed to import image ', str(e))
+                content, _ = secure_image_fetch(url)
+                self.import_recipe_image(recipe, BytesIO(content))
+            except ValueError as e:
+                # Expected errors from secure_image_fetch (SSRF, timeout, invalid content type)
+                logger.info(f"Could not fetch image for recipe '{recipe.name}': {e}")
+            except (IOError, OSError) as e:
+                # File system errors during image processing
+                logger.warning(f"Failed to process image for recipe '{recipe.name}': {e}")
 
         return recipe
 

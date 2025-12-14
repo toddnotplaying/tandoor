@@ -43,6 +43,12 @@ import {
     NutritionInformationFromJSONTyped,
     NutritionInformationToJSON,
 } from './NutritionInformation';
+import type { RecipeImageItem } from './RecipeImageItem';
+import {
+    RecipeImageItemFromJSON,
+    RecipeImageItemFromJSONTyped,
+    RecipeImageItemToJSON,
+} from './RecipeImageItem';
 
 /**
  * Adds nested create feature
@@ -74,6 +80,12 @@ export interface PatchedRecipe {
      * @memberof PatchedRecipe
      */
     readonly image?: string;
+    /**
+     * 
+     * @type {Array<RecipeImageItem>}
+     * @memberof PatchedRecipe
+     */
+    readonly images?: Array<RecipeImageItem>;
     /**
      * 
      * @type {Array<Keyword>}
@@ -217,6 +229,7 @@ export function PatchedRecipeFromJSONTyped(json: any, ignoreDiscriminator: boole
         'name': json['name'] == null ? undefined : json['name'],
         'description': json['description'] == null ? undefined : json['description'],
         'image': json['image'] == null ? undefined : json['image'],
+        'images': json['images'] == null ? undefined : ((json['images'] as Array<any>).map(RecipeImageItemFromJSON)),
         'keywords': json['keywords'] == null ? undefined : ((json['keywords'] as Array<any>).map(KeywordFromJSON)),
         'steps': json['steps'] == null ? undefined : ((json['steps'] as Array<any>).map(StepFromJSON)),
         'workingTime': json['working_time'] == null ? undefined : json['working_time'],
@@ -240,7 +253,7 @@ export function PatchedRecipeFromJSONTyped(json: any, ignoreDiscriminator: boole
     };
 }
 
-export function PatchedRecipeToJSON(value?: Omit<PatchedRecipe, 'image'|'createdBy'|'createdAt'|'updatedAt'|'foodProperties'|'rating'|'lastCooked'> | null): any {
+export function PatchedRecipeToJSON(value?: Omit<PatchedRecipe, 'image'|'images'|'created_by'|'created_at'|'updated_at'|'food_properties'|'rating'|'last_cooked'> | null): any {
     if (value == null) {
         return value;
     }

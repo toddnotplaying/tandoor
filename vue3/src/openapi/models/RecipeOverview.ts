@@ -25,6 +25,12 @@ import {
     KeywordLabelFromJSONTyped,
     KeywordLabelToJSON,
 } from './KeywordLabel';
+import type { RecipeImageItem } from './RecipeImageItem';
+import {
+    RecipeImageItemFromJSON,
+    RecipeImageItemFromJSONTyped,
+    RecipeImageItemToJSON,
+} from './RecipeImageItem';
 
 /**
  * Adds nested create feature
@@ -56,6 +62,12 @@ export interface RecipeOverview {
      * @memberof RecipeOverview
      */
     readonly image: string | null;
+    /**
+     * 
+     * @type {Array<RecipeImageItem>}
+     * @memberof RecipeOverview
+     */
+    readonly images: Array<RecipeImageItem>;
     /**
      * 
      * @type {Array<KeywordLabel>}
@@ -148,6 +160,7 @@ export interface RecipeOverview {
 export function instanceOfRecipeOverview(value: object): value is RecipeOverview {
     if (!('name' in value) || value['name'] === undefined) return false;
     if (!('image' in value) || value['image'] === undefined) return false;
+    if (!('images' in value) || value['images'] === undefined) return false;
     if (!('keywords' in value) || value['keywords'] === undefined) return false;
     if (!('workingTime' in value) || value['workingTime'] === undefined) return false;
     if (!('waitingTime' in value) || value['waitingTime'] === undefined) return false;
@@ -178,6 +191,7 @@ export function RecipeOverviewFromJSONTyped(json: any, ignoreDiscriminator: bool
         'name': json['name'],
         'description': json['description'] == null ? undefined : json['description'],
         'image': json['image'],
+        'images': ((json['images'] as Array<any>).map(RecipeImageItemFromJSON)),
         'keywords': ((json['keywords'] as Array<any>).map(KeywordLabelFromJSON)),
         'workingTime': json['working_time'],
         'waitingTime': json['waiting_time'],
@@ -195,7 +209,7 @@ export function RecipeOverviewFromJSONTyped(json: any, ignoreDiscriminator: bool
     };
 }
 
-export function RecipeOverviewToJSON(value?: Omit<RecipeOverview, 'image'|'keywords'|'workingTime'|'waitingTime'|'createdBy'|'createdAt'|'updatedAt'|'internal'|'servings'|'servingsText'|'rating'|'lastCooked'|'_new'|'recent'> | null): any {
+export function RecipeOverviewToJSON(value?: Omit<RecipeOverview, 'image'|'images'|'keywords'|'working_time'|'waiting_time'|'created_by'|'created_at'|'updated_at'|'internal'|'servings'|'servings_text'|'rating'|'last_cooked'|'new'|'recent'> | null): any {
     if (value == null) {
         return value;
     }

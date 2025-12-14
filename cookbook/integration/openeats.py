@@ -1,10 +1,17 @@
 import json
+import logging
+import os
+from io import BytesIO
 
+from django.conf import settings
+from django.core.files import File
 from django.utils.translation import gettext as _
 
 from cookbook.helper.ingredient_parser import IngredientParser
 from cookbook.integration.integration import Integration
 from cookbook.models import Comment, CookLog, Ingredient, Keyword, Recipe, Step
+
+logger = logging.getLogger(__name__)
 
 
 class OpenEats(Integration):
@@ -49,9 +56,20 @@ class OpenEats(Integration):
             Comment.objects.create(recipe=recipe, text=comment['text'], created_by=self.request.user)
             CookLog.objects.create(recipe=recipe, rating=comment['rating'], created_by=self.request.user, space=self.request.space)
 
+        # Handle image import - OpenEats stores image path references
+        # Images must be manually placed in MEDIA_ROOT/recipes/openeats-import/
         if file["photo"] != '':
-            recipe.image = f'recipes/openeats-import/{file["photo"]}'
-            recipe.save()
+            photo_path = os.path.join(settings.MEDIA_ROOT, 'recipes', 'openeats-import', file["photo"])
+            if os.path.exists(photo_path):
+                try:
+                    with open(photo_path, 'rb') as image_file:
+                        _, ext = os.path.splitext(file["photo"])
+                        filetype = ext.lower() if ext else '.jpeg'
+                        self.import_recipe_image(recipe, BytesIO(image_file.read()), filetype=filetype)
+                except (IOError, OSError) as e:
+                    logger.warning(f"Failed to import image for recipe '{recipe.name}': {e}")
+            else:
+                logger.info(f"Image file not found for recipe '{recipe.name}': {photo_path}")
 
         step = Step.objects.create(instruction=instructions, space=self.request.space, show_ingredients_table=self.request.user.userpreference.show_step_ingredients,)
 

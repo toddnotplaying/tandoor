@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVector
 from django.core.cache import caches
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import translation
 from django_scopes import scope, scopes_disabled
@@ -12,8 +12,8 @@ from django_scopes import scope, scopes_disabled
 from cookbook.helper.cache_helper import CacheHelper
 from cookbook.helper.shopping_helper import RecipeShoppingEditor
 from cookbook.managers import DICTIONARY
-from cookbook.models import (Food, MealPlan, PropertyType, Recipe, SearchFields, SearchPreference,
-                             Step, Unit, UserPreference)
+from cookbook.models import (Food, MealPlan, PropertyType, Recipe, RecipeImage, SearchFields,
+                             SearchPreference, Step, Unit, UserPreference)
 
 SQLITE = True
 if settings.DATABASES['default']['ENGINE'] == 'django.db.backends.postgresql':
@@ -130,3 +130,19 @@ def clear_unit_cache(sender, instance=None, created=False, **kwargs):
 def clear_property_type_cache(sender, instance=None, created=False, **kwargs):
     if instance:
         caches['default'].delete(CacheHelper(instance.space).PROPERTY_TYPE_CACHE_KEY)
+
+
+@receiver(post_delete, sender=RecipeImage)
+def promote_primary_on_delete(sender, instance=None, **kwargs):
+    """
+    When the primary image is deleted, automatically promote the next image to primary.
+    This ensures a recipe always has a primary image if any images exist.
+    """
+    if instance and instance.is_primary:
+        with scopes_disabled():
+            next_image = RecipeImage.objects.filter(
+                recipe=instance.recipe
+            ).order_by('sort_order', 'pk').first()
+            if next_image:
+                next_image.is_primary = True
+                next_image.save(update_fields=['is_primary'])

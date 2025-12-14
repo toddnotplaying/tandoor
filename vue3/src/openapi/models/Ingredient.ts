@@ -150,7 +150,7 @@ export function IngredientFromJSONTyped(json: any, ignoreDiscriminator: boolean)
     };
 }
 
-export function IngredientToJSON(value?: Omit<Ingredient, 'conversions'|'usedInRecipes'> | null): any {
+export function IngredientToJSON(value?: Omit<Ingredient, 'conversions'|'used_in_recipes'> | null): any {
     if (value == null) {
         return value;
     }

@@ -1,17 +1,18 @@
 import base64
 import gzip
 import json
+import logging
 import re
 from gettext import gettext as _
 from io import BytesIO
 
-import requests
-
-from cookbook.helper.HelperFunctions import validate_import_url
+from cookbook.helper.HelperFunctions import secure_image_fetch
 from cookbook.helper.ingredient_parser import IngredientParser
 from cookbook.helper.recipe_url_import import parse_servings, parse_servings_text
 from cookbook.integration.integration import Integration
 from cookbook.models import Ingredient, Keyword, Recipe, Step
+
+logger = logging.getLogger(__name__)
 
 
 class Paprika(Integration):
@@ -87,21 +88,27 @@ class Paprika(Integration):
             # Paprika exports can have images in either of image_url, or photo_data.
             # If a user takes an image himself, only photo_data will be set.
             # If a user imports an image, both will be set. But the photo_data will be a center-cropped square resized version, so the image_url is preferred.
-            
+
             # Try to download image if possible
             try:
                 if recipe_json.get("image_url", None):
                     url = recipe_json.get("image_url", None)
-                    if validate_import_url(url):
-                        response = requests.get(url)
-                        if response.status_code == 200 and len(response.content) > 0:
-                            self.import_recipe_image(recipe, BytesIO(response.content))
-            except Exception:
-                pass
+                    content, _ = secure_image_fetch(url)
+                    if len(content) > 0:
+                        self.import_recipe_image(recipe, BytesIO(content))
+            except ValueError as e:
+                # Expected errors from secure_image_fetch (SSRF, timeout, invalid content type)
+                logger.info(f"Could not fetch image for recipe '{recipe.name}': {e}")
+            except (IOError, OSError) as e:
+                # File system errors during image processing
+                logger.warning(f"Failed to process image for recipe '{recipe.name}': {e}")
 
             # If no image downloaded, try to extract from photo_data
-            if not recipe.image:
+            if not recipe.images.exists():
                 if recipe_json.get("photo_data", None):
-                    self.import_recipe_image(recipe, BytesIO(base64.b64decode(recipe_json['photo_data'])), filetype='.jpeg')
+                    try:
+                        self.import_recipe_image(recipe, BytesIO(base64.b64decode(recipe_json['photo_data'])), filetype='.jpeg')
+                    except (ValueError, IOError, OSError) as e:
+                        logger.warning(f"Failed to import embedded photo for recipe '{recipe.name}': {e}")
 
             return recipe

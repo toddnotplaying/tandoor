@@ -108,7 +108,7 @@ class Dropbox(Provider):
 
         url = recipe.link.replace('www.dropbox.', 'dl.dropboxusercontent.')
         if validate_import_url(url):
-            response = requests.get(url)
+            response = requests.get(url, timeout=30)  # 30s timeout for potentially large recipe files
 
             return io.BytesIO(response.content)
 

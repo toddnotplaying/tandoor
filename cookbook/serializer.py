@@ -34,7 +34,7 @@ from cookbook.helper.unit_conversion_helper import UnitConversionHelper
 from cookbook.models import (Automation, BookmarkletImport, Comment, CookLog, CustomFilter,
                              ExportLog, Food, FoodInheritField, ImportLog, Ingredient, InviteLink,
                              Keyword, MealPlan, MealType, NutritionInformation, Property,
-                             PropertyType, Recipe, RecipeBook, RecipeBookEntry, RecipeImport,
+                             PropertyType, Recipe, RecipeBook, RecipeBookEntry, RecipeImage, RecipeImport,
                              ShareLink, ShoppingListEntry, ShoppingListRecipe, Space,
                              Step, Storage, Supermarket, SupermarketCategory,
                              SupermarketCategoryRelation, Sync, SyncLog, Unit, UnitConversion,
@@ -1152,6 +1152,32 @@ class CommentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'created_by', 'updated_at', ]
 
 
+class RecipeImageItemSerializer(WritableNestedModelSerializer):
+    """Serializer for individual RecipeImage objects (multiple images per recipe)."""
+    image = serializers.ImageField(required=False, allow_null=True)
+    image_url = serializers.CharField(max_length=4096, required=False, allow_null=True, write_only=True)
+    created_by = UserSerializer(read_only=True)
+
+    def validate_image(self, value):
+        if value and not is_file_type_allowed(value.name, image_only=True):
+            raise serializers.ValidationError("Invalid image file type")
+        return value
+
+    def create(self, validated_data):
+        validated_data.pop('image_url', None)  # URL handled in ViewSet
+        validated_data['created_by'] = self.context['request'].user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('image_url', None)  # URL handled in ViewSet
+        return super().update(instance, validated_data)
+
+    class Meta:
+        model = RecipeImage
+        fields = ['id', 'recipe', 'image', 'image_url', 'is_primary', 'sort_order', 'created_at', 'updated_at', 'created_by']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by']
+
+
 class RecipeOverviewSerializer(RecipeBaseSerializer):
     keywords = KeywordLabelSerializer(many=True, read_only=True)
     new = serializers.SerializerMethodField('is_recipe_new', read_only=True)
@@ -1159,6 +1185,7 @@ class RecipeOverviewSerializer(RecipeBaseSerializer):
     rating = CustomDecimalField(required=False, allow_null=True, read_only=True)
     last_cooked = serializers.DateTimeField(required=False, allow_null=True, read_only=True)
     created_by = UserSerializer(read_only=True)
+    images = RecipeImageItemSerializer(many=True, read_only=True)
 
     def create(self, validated_data):
         pass
@@ -1169,7 +1196,7 @@ class RecipeOverviewSerializer(RecipeBaseSerializer):
     class Meta:
         model = Recipe
         fields = (
-            'id', 'name', 'description', 'image', 'keywords', 'working_time',
+            'id', 'name', 'description', 'image', 'images', 'keywords', 'working_time',
             'waiting_time', 'created_by', 'created_at', 'updated_at',
             'internal', 'private', 'servings', 'servings_text', 'rating', 'last_cooked', 'new', 'recent'
         )
@@ -1193,6 +1220,7 @@ class RecipeSerializer(RecipeBaseSerializer):
     last_cooked = serializers.DateTimeField(required=False, allow_null=True, read_only=True)
     food_properties = serializers.SerializerMethodField('get_food_properties')
     created_by = UserSerializer(read_only=True)
+    images = RecipeImageItemSerializer(many=True, read_only=True)
 
     @extend_schema_field(serializers.JSONField)
     def get_food_properties(self, obj):
@@ -1202,7 +1230,7 @@ class RecipeSerializer(RecipeBaseSerializer):
     class Meta:
         model = Recipe
         fields = (
-            'id', 'name', 'description', 'image', 'keywords', 'steps', 'working_time', 'waiting_time', 'created_by', 'created_at', 'updated_at', 'source_url',
+            'id', 'name', 'description', 'image', 'images', 'keywords', 'steps', 'working_time', 'waiting_time', 'created_by', 'created_at', 'updated_at', 'source_url',
             'internal', 'show_ingredient_overview', 'nutrition', 'properties', 'food_properties', 'servings', 'file_path', 'servings_text', 'rating',
             'last_cooked', 'private', 'shared'
         )
@@ -1221,17 +1249,23 @@ class RecipeSerializer(RecipeBaseSerializer):
 
 
 class RecipeImageSerializer(WritableNestedModelSerializer):
+    """
+    Serializer for legacy Recipe.image field (single image per recipe).
+    DEPRECATED: Use RecipeImageItemSerializer for the new multi-image system.
+    """
     image = serializers.ImageField(required=False, allow_null=True)
     image_url = serializers.CharField(max_length=4096, required=False, allow_null=True)
 
+    def validate_image(self, value):
+        """Validate that uploaded image has an allowed file type."""
+        if value and not is_file_type_allowed(value.name, image_only=True):
+            raise serializers.ValidationError("Invalid image file type. Allowed types: jpg, jpeg, png, gif, webp, svg")
+        return value
+
     def create(self, validated_data):
-        if 'image' in validated_data and not is_file_type_allowed(validated_data['image'].name, image_only=True):
-            return None
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        if 'image' in validated_data and not is_file_type_allowed(validated_data['image'].name, image_only=True):
-            return None
         return super().update(instance, validated_data)
 
     class Meta:
@@ -1849,16 +1883,25 @@ class StepExportSerializer(WritableNestedModelSerializer):
         fields = ('name', 'instruction', 'ingredients', 'time', 'order', 'show_as_header', 'show_ingredients_table')
 
 
+class RecipeImageExportSerializer(serializers.ModelSerializer):
+    """Export serializer for recipe images - exports metadata only, binary handled separately."""
+
+    class Meta:
+        model = RecipeImage
+        fields = ('is_primary', 'sort_order')
+
+
 class RecipeExportSerializer(WritableNestedModelSerializer):
     nutrition = NutritionInformationSerializer(allow_null=True, required=False)
     steps = StepExportSerializer(many=True)
     keywords = KeywordExportSerializer(many=True)
+    images = RecipeImageExportSerializer(many=True, required=False, read_only=True)
 
     class Meta:
         model = Recipe
         fields = (
             'name', 'description', 'keywords', 'steps', 'working_time',
-            'waiting_time', 'internal', 'nutrition', 'servings', 'servings_text', 'source_url',
+            'waiting_time', 'internal', 'nutrition', 'servings', 'servings_text', 'source_url', 'images',
         )
 
     def create(self, validated_data):

@@ -43,6 +43,12 @@ import {
     NutritionInformationFromJSONTyped,
     NutritionInformationToJSON,
 } from './NutritionInformation';
+import type { RecipeImageItem } from './RecipeImageItem';
+import {
+    RecipeImageItemFromJSON,
+    RecipeImageItemFromJSONTyped,
+    RecipeImageItemToJSON,
+} from './RecipeImageItem';
 
 /**
  * Adds nested create feature
@@ -74,6 +80,12 @@ export interface Recipe {
      * @memberof Recipe
      */
     readonly image: string | null;
+    /**
+     * 
+     * @type {Array<RecipeImageItem>}
+     * @memberof Recipe
+     */
+    readonly images: Array<RecipeImageItem>;
     /**
      * 
      * @type {Array<Keyword>}
@@ -202,6 +214,7 @@ export interface Recipe {
 export function instanceOfRecipe(value: object): value is Recipe {
     if (!('name' in value) || value['name'] === undefined) return false;
     if (!('image' in value) || value['image'] === undefined) return false;
+    if (!('images' in value) || value['images'] === undefined) return false;
     if (!('steps' in value) || value['steps'] === undefined) return false;
     if (!('createdBy' in value) || value['createdBy'] === undefined) return false;
     if (!('createdAt' in value) || value['createdAt'] === undefined) return false;
@@ -226,6 +239,7 @@ export function RecipeFromJSONTyped(json: any, ignoreDiscriminator: boolean): Re
         'name': json['name'],
         'description': json['description'] == null ? undefined : json['description'],
         'image': json['image'],
+        'images': ((json['images'] as Array<any>).map(RecipeImageItemFromJSON)),
         'keywords': json['keywords'] == null ? undefined : ((json['keywords'] as Array<any>).map(KeywordFromJSON)),
         'steps': ((json['steps'] as Array<any>).map(StepFromJSON)),
         'workingTime': json['working_time'] == null ? undefined : json['working_time'],
@@ -249,7 +263,7 @@ export function RecipeFromJSONTyped(json: any, ignoreDiscriminator: boolean): Re
     };
 }
 
-export function RecipeToJSON(value?: Omit<Recipe, 'image'|'createdBy'|'createdAt'|'updatedAt'|'foodProperties'|'rating'|'lastCooked'> | null): any {
+export function RecipeToJSON(value?: Omit<Recipe, 'image'|'images'|'created_by'|'created_at'|'updated_at'|'food_properties'|'rating'|'last_cooked'> | null): any {
     if (value == null) {
         return value;
     }

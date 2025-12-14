@@ -1142,6 +1142,90 @@ class Recipe(ExportModelOperationsMixin('recipe'), models.Model, PermissionModel
         ordering = ('name',)
 
 
+class RecipeImage(ExportModelOperationsMixin('recipe_image'), models.Model, PermissionModelMixin):
+    """
+    Model to store multiple images for a recipe.
+
+    Supports multiple images per recipe with exactly one primary image per recipe,
+    enforced by a database constraint. Images are ordered by sort_order for gallery display.
+
+    Attributes:
+        recipe: Foreign key to the parent Recipe
+        image: The actual image file stored in 'recipes/' directory
+        is_primary: Whether this is the primary/featured image for the recipe.
+                    Only one image per recipe can be primary (enforced by unique constraint).
+        sort_order: Integer for ordering images in gallery view
+        created_at: Timestamp when the image was uploaded
+        updated_at: Timestamp of last modification
+        created_by: User who uploaded the image
+
+    Note:
+        The save() method handles race-safe primary image management:
+        - Auto-promotes first image to primary if no primary exists
+        - Demotes other images when a new primary is set
+        Uses select_for_update() to prevent concurrent modification issues.
+    """
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='recipes/')
+    is_primary = models.BooleanField(default=False, db_index=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    objects = ScopedManager(space='recipe__space')
+
+    @staticmethod
+    def get_space_key():
+        return 'recipe', 'space'
+
+    def get_space(self):
+        return self.recipe.space
+
+    def save(self, *args, **kwargs):
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Lock existing images for this recipe to prevent race conditions
+            # The queryset must be evaluated (list()) to actually acquire the lock
+            if self.recipe_id:
+                locked_images = list(
+                    RecipeImage.objects.select_for_update().filter(recipe=self.recipe)
+                )
+
+                # Auto-set as primary if this is the first image for the recipe
+                if not self.pk and not self.is_primary:
+                    if len(locked_images) == 0:
+                        self.is_primary = True
+
+                # If this is marked as primary, unset primary on all other images for this recipe
+                if self.is_primary:
+                    RecipeImage.objects.filter(
+                        recipe=self.recipe, is_primary=True
+                    ).exclude(pk=self.pk).update(is_primary=False)
+            else:
+                # New recipe without ID yet - just set as primary if requested
+                pass
+
+            super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'Image for {self.recipe.name} (#{self.id})'
+
+    class Meta:
+        ordering = ('sort_order', 'pk',)
+        indexes = [
+            models.Index(fields=['recipe', 'is_primary']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['recipe'],
+                condition=models.Q(is_primary=True),
+                name='unique_primary_per_recipe'
+            ),
+        ]
+
+
 class Comment(ExportModelOperationsMixin('comment'), models.Model, PermissionModelMixin):
     recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     text = models.TextField()

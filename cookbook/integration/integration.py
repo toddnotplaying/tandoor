@@ -16,7 +16,7 @@ from django_scopes import scope
 from lxml import etree
 
 from cookbook.helper.image_processing import handle_image
-from cookbook.models import Keyword, Recipe
+from cookbook.models import Keyword, Recipe, RecipeImage
 from recipes.settings import DEBUG, EXPORT_FILE_CACHE_DURATION
 
 
@@ -263,13 +263,23 @@ class Integration:
 
     def import_recipe_image(self, recipe, image_file, filetype='.jpeg'):
         """
-        Adds an image to a recipe naming it correctly
+        Adds an image to a recipe using the RecipeImage model (multiple images support).
         :param recipe: Recipe object
         :param image_file: ByteIO stream containing the image
         :param filetype: type of file to write bytes to, default to .jpeg if unknown
         """
-        recipe.image = File(handle_image(self.request, File(image_file, name='image'), filetype=filetype), name=f'{uuid.uuid4()}_{recipe.pk}{filetype}')
-        recipe.save()
+        # Create a RecipeImage entry instead of setting Recipe.image directly
+        recipe_image = RecipeImage(
+            recipe=recipe,
+            is_primary=not recipe.images.exists(),  # First image is primary
+            sort_order=recipe.images.count(),
+            created_by=self.request.user
+        )
+        recipe_image.image.save(
+            f'{uuid.uuid4()}_{recipe.pk}{filetype}',
+            handle_image(self.request, File(image_file, name='image'), filetype=filetype)
+        )
+        recipe_image.save()
 
     def get_recipe_from_file(self, file):
         """

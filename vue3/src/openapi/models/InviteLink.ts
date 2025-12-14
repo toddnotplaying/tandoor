@@ -123,7 +123,7 @@ export function InviteLinkFromJSONTyped(json: any, ignoreDiscriminator: boolean)
     };
 }
 
-export function InviteLinkToJSON(value?: Omit<InviteLink, 'uuid'|'usedBy'|'createdBy'|'createdAt'> | null): any {
+export function InviteLinkToJSON(value?: Omit<InviteLink, 'uuid'|'used_by'|'created_by'|'created_at'> | null): any {
     if (value == null) {
         return value;
     }

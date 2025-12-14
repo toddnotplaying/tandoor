@@ -100,7 +100,8 @@ class Nextcloud(Provider):
                 headers=headers,
                 auth=HTTPBasicAuth(
                     recipe.storage.username, recipe.storage.password
-                )
+                ),
+                timeout=15
             )
 
             response_json = r.json()

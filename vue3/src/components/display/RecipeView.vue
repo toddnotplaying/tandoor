@@ -14,11 +14,45 @@
 
             <!-- mobile layout -->
             <v-card class="rounded-0">
-                <recipe-image
-                    max-height="25vh"
-                    :recipe="recipe"
-                    v-if="recipe.image != undefined">
-                </recipe-image>
+                <div
+                    class="recipe-image-nav-container"
+                    v-if="images.length > 0"
+                    tabindex="0"
+                    @keydown="handleImageKeydown"
+                    role="region"
+                    :aria-label="$t('Recipe_Image') + ' gallery'">
+                    <v-img
+                        max-height="25vh"
+                        cover
+                        :src="currentImage"
+                        :alt="$t('Recipe_Image')"
+                        @error="onImageError">
+                        <div v-if="imageLoadError" class="image-error-overlay">
+                            <v-icon icon="mdi-image-broken" size="48"></v-icon>
+                        </div>
+                    </v-img>
+                    <template v-if="hasMultipleImages && !useUserPreferenceStore().isPrintMode">
+                        <v-btn
+                            icon="mdi-chevron-left"
+                            class="nav-btn nav-btn-left"
+                            variant="flat"
+                            size="small"
+                            :disabled="currentImageIndex === 0"
+                            :aria-label="$t('Previous')"
+                            @click="prevImage" />
+                        <v-btn
+                            icon="mdi-chevron-right"
+                            class="nav-btn nav-btn-right"
+                            variant="flat"
+                            size="small"
+                            :disabled="currentImageIndex === images.length - 1"
+                            :aria-label="$t('Next')"
+                            @click="nextImage" />
+                        <div class="image-indicator" aria-live="polite">
+                            {{ currentImageIndex + 1 }} / {{ images.length }}
+                        </div>
+                    </template>
+                </div>
 
                 <v-card>
                     <v-sheet class="d-flex align-center">
@@ -64,11 +98,46 @@
         <template class="d-none d-lg-block d-print-block">
             <v-row dense>
                 <v-col cols="8">
-                    <recipe-image
-                        :rounded="true"
-                        max-height="40vh"
-                        :recipe="recipe">
-                    </recipe-image>
+                    <div
+                        class="recipe-image-nav-container"
+                        v-if="images.length > 0"
+                        tabindex="0"
+                        @keydown="handleImageKeydown"
+                        role="region"
+                        :aria-label="$t('Recipe_Image') + ' gallery'">
+                        <v-img
+                            rounded="lg"
+                            max-height="40vh"
+                            cover
+                            :src="currentImage"
+                            :alt="$t('Recipe_Image')"
+                            @error="onImageError">
+                            <div v-if="imageLoadError" class="image-error-overlay">
+                                <v-icon icon="mdi-image-broken" size="64"></v-icon>
+                            </div>
+                        </v-img>
+                        <template v-if="hasMultipleImages && !useUserPreferenceStore().isPrintMode">
+                            <v-btn
+                                icon="mdi-chevron-left"
+                                class="nav-btn nav-btn-left"
+                                variant="flat"
+                                size="small"
+                                :disabled="currentImageIndex === 0"
+                                :aria-label="$t('Previous')"
+                                @click="prevImage" />
+                            <v-btn
+                                icon="mdi-chevron-right"
+                                class="nav-btn nav-btn-right"
+                                variant="flat"
+                                size="small"
+                                :disabled="currentImageIndex === images.length - 1"
+                                :aria-label="$t('Next')"
+                                @click="nextImage" />
+                            <div class="image-indicator" aria-live="polite">
+                                {{ currentImageIndex + 1 }} / {{ images.length }}
+                            </div>
+                        </template>
+                    </div>
                 </v-col>
                 <v-col cols="4">
                     <v-card class="h-100 d-flex flex-column">
@@ -214,6 +283,7 @@ import {ErrorMessageType, useMessageStore} from "@/stores/MessageStore.ts";
 import {useFileApi} from "@/composables/useFileApi.ts";
 import PrivateRecipeBadge from "@/components/display/PrivateRecipeBadge.vue";
 import ModelSelect from "@/components/inputs/ModelSelect.vue";
+import {getRecipeImages} from "@/composables/useRecipeImage";
 
 const {request, release} = useWakeLock()
 const {doAiImport, fileApiLoading} = useFileApi()
@@ -228,6 +298,62 @@ const servings = ref(props.servings ?? recipe.value.servings ?? 1)
 const showFullRecipeName = ref(false)
 
 const selectedAiProvider = ref<undefined | AiProvider>(useUserPreferenceStore().activeSpace.aiDefaultProvider)
+
+// Image gallery navigation
+const currentImageIndex = ref(0)
+const imageLoadError = ref(false)
+
+const images = computed(() => getRecipeImages(recipe.value))
+
+// Find index of primary image, default to 0
+const primaryImageIndex = computed(() => {
+    const idx = images.value.findIndex(img => img.isPrimary)
+    return idx >= 0 ? idx : 0
+})
+
+const currentImage = computed(() => {
+    if (images.value.length === 0) return null
+    return images.value[currentImageIndex.value]?.image
+})
+
+const hasMultipleImages = computed(() => images.value.length > 1)
+
+// Reset to primary image when recipe changes
+watch(() => recipe.value.id, () => {
+    currentImageIndex.value = primaryImageIndex.value
+    imageLoadError.value = false
+}, { immediate: true })
+
+// Reset error state when image changes
+watch(currentImageIndex, () => {
+    imageLoadError.value = false
+})
+
+function nextImage() {
+    if (currentImageIndex.value < images.value.length - 1) {
+        currentImageIndex.value++
+    }
+}
+
+function prevImage() {
+    if (currentImageIndex.value > 0) {
+        currentImageIndex.value--
+    }
+}
+
+function onImageError() {
+    imageLoadError.value = true
+}
+
+function handleImageKeydown(event: KeyboardEvent) {
+    if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        prevImage()
+    } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        nextImage()
+    }
+}
 
 /**
  * factor for multiplying ingredient amounts based on recipe base servings and user selected servings
@@ -297,5 +423,70 @@ function aiConvertRecipe() {
 </script>
 
 <style scoped>
+.recipe-image-nav-container {
+    position: relative;
+}
 
+.recipe-image-nav-container:focus {
+    outline: 2px solid var(--v-theme-primary);
+    outline-offset: 2px;
+}
+
+.nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.8;
+    background: rgba(0, 0, 0, 0.3) !important;
+    color: white !important;
+}
+
+.nav-btn:hover {
+    opacity: 1;
+}
+
+.nav-btn:focus {
+    opacity: 1;
+    outline: 2px solid white;
+}
+
+.nav-btn-left {
+    left: 8px;
+}
+
+.nav-btn-right {
+    right: 8px;
+}
+
+.image-indicator {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.image-error-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.1);
+    color: rgba(0, 0, 0, 0.4);
+}
+
+@media print {
+    .nav-btn,
+    .image-indicator {
+        display: none !important;
+    }
+}
 </style>
